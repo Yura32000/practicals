@@ -7,38 +7,27 @@ from io import StringIO
 import os
 
 def serializeObject(pythonObj):
-    return pickle.dumps(pythonObj, pickle.HIGHEST_PROTOCOL)
+    with NamedTemporaryFile(delete=False) as f:
+        pickle.dump(pythonObj, f,  pickle.HIGHEST_PROTOCOL)   
+    return f.name
 
-def deserializeObject(pickledObj):
-    return pickle.loads(pickledObj)
+def deserializeObject(path):
+    return pickle.load(open(path, "rb"))
 
 def serializeKerasModel(model):
     with NamedTemporaryFile() as f:
         model.save(f.name)
-        f.seek(0)
-        obj = f.read() 
-    return obj
+    return f.name
 
-def deserializeKerasModel(obj):
+def deserializeKerasModel(path):
     from keras.models import Model,load_model
-    with NamedTemporaryFile(mode='wb') as f:
-        f.write(obj)
-        f.flush()
-        model = load_model(f.name)  
+    model = load_model(path)
     return model
     
 def serializeNumpyArray(arr):
     with NamedTemporaryFile() as f:
         np.save(f, arr)
-        f.seek(0)
-        obj = f.read()  
-        f.close()
-    return obj  
-    
-def serializeFile(path):
-    with open(path, mode='rb') as f:
-        obj = f.read()  
-    return obj    
+    return f.name 
 
 def put_to_objectstore(credentials, object_name, my_data, binary=True, region='dallas'):
     print('my_data', len(my_data))
@@ -112,6 +101,64 @@ def get_from_cloud_object_storage(api_key, full_object_path, auth_endpoint="http
     return response.content
         
 
+def put_to_cos(apikey, resource_instance_id, full_object_path, file_path, auth_endpoint="https://iam.bluemix.net/oidc/token", service_endpoint="https://s3-api.us-geo.objectstorage.softlayer.net"):
+    import ibm_boto3
+    from ibm_botocore.client import Config
+
+    bucket_name, object_name = full_object_path.split("/")
+
+    resource = ibm_boto3.resource('s3',
+                      ibm_api_key_id=apikey,
+                      ibm_service_instance_id=resource_instance_id,
+                      ibm_auth_endpoint=auth_endpoint,
+                      endpoint_url=service_endpoint,
+                      config=Config(signature_version='oauth'))
+
+    allbuckets = resource.buckets.all()
+    targetBucket = None
+    for b in allbuckets:          
+        if b.name == bucket_name:
+            targetBucket = b
+            break
+   
+    with open(file_path, 'rb') as f:
+        obj = targetBucket.Object(object_name)        
+        obj.upload_fileobj(f)   
+       
+    print( "An object '%s' has been succesfully uploaded to bucket '%s'." % (object_name, bucket_name) )
+
+
+def get_from_cos(apikey, resource_instance_id, full_object_path, auth_endpoint="https://iam.bluemix.net/oidc/token", service_endpoint="https://s3-api.us-geo.objectstorage.softlayer.net"):
+    import ibm_boto3
+    from ibm_botocore.client import Config
+
+    bucket_name, object_name = full_object_path.split("/")
+
+    resource = ibm_boto3.resource('s3',
+                      ibm_api_key_id=apikey,
+                      ibm_service_instance_id=resource_instance_id,
+                      ibm_auth_endpoint=auth_endpoint,
+                      endpoint_url=service_endpoint,
+                      config=Config(signature_version='oauth'))
+
+    allbuckets = resource.buckets.all()
+    targetBucket = None
+    for b in allbuckets:          
+        if b.name == bucket_name:
+            targetBucket = b
+            break
+    
+    file_path = ""
+    with NamedTemporaryFile(delete=False) as f:
+        file_path = f.name
+        obj = targetBucket.Object(object_name)
+        obj.download_file(file_path)
+    
+    print( "An object '%s' has been succesfully downloaded from bucket '%s'." % (object_name, bucket_name) )
+
+    return file_path    
+
+    
 # Make sure to install: ibm-cos-sdk
 # !pip install ibm-cos-sdk
 # https://github.com/IBM/ibm-cos-sdk-python
