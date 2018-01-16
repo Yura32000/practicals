@@ -8,7 +8,7 @@ import os
 
 def serializeObject(pythonObj):
     with NamedTemporaryFile(delete=False) as f:
-        pickle.dump(pythonObj, f,  pickle.HIGHEST_PROTOCOL)   
+        pickle.dump(pythonObj, f)   
     return f.name
 
 def deserializeObject(path):
